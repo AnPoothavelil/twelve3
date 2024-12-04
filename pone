@@ -1,0 +1,11 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <errno.h>
+
+#define PORT 3456
+#define BUFFER_Size 4096
+
+int connect_to_server(const char *given);
