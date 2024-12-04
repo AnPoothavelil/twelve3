@@ -3,144 +3,279 @@
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
-#include <errno.h>
+#include <stdbool.h>
+#include <netdb.h>  // For getaddrinfo
 
-#define PORT 3456
-#define BUFFER_SIZE 4096
+#define BUFFER_SIZE 1024
+#define SERVER_PORT 3456
 
-void handle_error(const char *message){
-  perror(message);
-  exit(EXIT_FAILURE);
-}
-
-int connect_to_server(const char *given){
-  int a;
-  struct sockaddr_in server_addr;
-  struct hostent *server;
-
-  a = socket(AF_INET, SOCK_STREAM, 0);
-  if (a < 0){
-    handle_error("Error");
-  }
-
-  server = gethostbyname(hostname);
-  if (server == NULL){
-    fprintf(stderr, "error");
-    exit(EXIT_FAILURE);
-  }
-
-  memset((char *)&server_addr, 0, sizeof(server_addr));
-  server_addr.sin_family = AF_INET;
-  memset((char *)&server_addr.sin_addr.s_addr, (char *)server->h)addr, server->h_length);
-  server_addr.sin_port = htons(PORT);
-
-  if(connect(a, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0){
-    handle_error("Error");
-  }
-
-  return a;
-}
-
-
-void send_command(int a, const char *command, char *response){
-  char buffer[BUFFER_SIZE];
-  memset(buffer, 0, BUFFER_SIZE);
-
-  if (write(a, command, strlen(command)) < 0){
-    handle_error("ERROR");
-  }
-  if (read(a, buffer, BUFFER_SIZE - 1) < 0){
-    handle_error("ERROR");
-  }
-
-  strcpy(reponse, buffer);
-}
-
-void list_files(int a){
-  char response[BUFFER_SIZE];
-  send_command(a, "LIST", response);
-
-  printf("AVAILABLE");
-  char *line = strtok(response, "\n");
-  while (line != NULL){
-    printf("%s\n", line);
-    line = strtok(NULL "\n");
-    }
-}
-
-void download_file(int a){
-  char filename[256];
-  char response[BUFFER_SIZE];
-  printf("Enter file name:");
-  scanf("%s", filename);
-  char size_cmd[512];
-  snpritf (size_cmd, sizeof(size_cmd), "SIZE %s\n", filename);
-  send_command(a, size_cmd, response);
-  if (strncmp(response, "+OK", 3) != 0){
-    printf("ERROR", response + 5);
-    return;
-  }
-  int file_size = atoi(response + 4);
-  printf("File size: %d bytes\n", file_size);
-  char get_cmd[512];
-  snprintf(get_cmd, sizeof(get_cmd), "GET %s\n", filename);
-  send_command(a, get_cmd, response);
-  FILE *file = fopen(filename, "wb");
-  if (!file){
-    perror("Error");
-    return;
-  }
-  int b = 0;
-  while (b < file_size){
-    int n = read(a, response, BUFFER_SIZE);
-    if (n <= 0) break;
-    fwrite(response, 1, n, file);
-    b += n;
-    printf("\rDownloading... %d\%d bytes", b, file_size);
-    fflush(stdout);
-  }
-  printf("\nDownload completed: %s\n", filename);
-
-  fclose(file);
-}
-
-void quit_server(int a){
-  char response[BUFFER_SIZE];
-  send_command(a, "QUIT", response);
-  printf("%s\n", response);
-  close(a);
-}
-
-void menu(int a){
-  while (1){
-    printf("\nMenu: \n1. List available files\n2. Download\n3. Quit\nEnter a choice: ");
-    int m;
-    scanf("%d", &m);
-    switch(m){
-      case 1:
-        list_files(a);
-        break;
-      case 2:
-        download_file(a);
-        break;
-      case 3:
-        quit_server(a);
-        return;
-      default:
-        printf("invalid select");
-    }
-  }
-}
+void optO(int sockfd);
+void optT(int sockfd);
 
 int main() {
-  char hostname[256];
-  printf("Enter server hostname (newark.cs.sierracollege.edu or london.cs.sierracollege.edu): ");
-  scanf("%s", hostname);
+    char server_address[256];
+    int sockfd;
+    struct sockaddr_in server_addr;
 
-  int a = connect_to_server(hostname);
-  char response[BUFFER_SIZE];
-  read(a, response, BUFFER_SIZE - 1);
-  printf("%s\n", response);
-  menu(a);
-  return 0;
+    // Prompt user for server selection
+    printf("Select server to connect to:\n");
+    printf("1. newark.cs.sierracollege.edu\n");
+    printf("2. london.cs.sierracollege.edu\n");
+    printf("Enter choice (1 or 2): ");
+    int choice;
+    scanf("%d", &choice);
+
+    if (choice == 1) {
+        strcpy(server_address, "newark.cs.sierracollege.edu");
+    } else if (choice == 2) {
+        strcpy(server_address, "london.cs.sierracollege.edu");
+    } else {
+        fprintf(stderr, "Invalid choice. Exiting.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // Create socket
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        perror("Socket creation failed");
+        exit(EXIT_FAILURE);
+    }
+
+    // Setup server address
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(SERVER_PORT);
+
+    // Resolve hostname to IP using getaddrinfo
+    struct addrinfo hints, *res;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+
+    int status = getaddrinfo(server_address, NULL, &hints, &res);
+    if (status != 0) {
+        fprintf(stderr, "Failed to resolve hostname: %s\n", gai_strerror(status));
+        close(sockfd);
+        exit(EXIT_FAILURE);
+    }
+
+    memcpy(&server_addr.sin_addr, &((struct sockaddr_in *)res->ai_addr)->sin_addr, sizeof(server_addr.sin_addr));
+    freeaddrinfo(res); // Free the linked list
+
+    // Connect to the server
+    if (connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        perror("Connection to server failed");
+        close(sockfd);
+        exit(EXIT_FAILURE);
+    }
+
+    printf("Connected to server: %s\n", server_address);
+
+    char buffer[BUFFER_SIZE];
+    // Receive initial greeting from server
+    if (read(sockfd, buffer, sizeof(buffer) - 1) > 0) {
+        printf("Server: %s", buffer);
+    } else {
+        fprintf(stderr, "Failed to receive greeting from server\n");
+        close(sockfd);
+        exit(EXIT_FAILURE);
+    }
+
+    while (true) {
+    // Present menu options
+        printf("\nMenu:\n1. List available files\n2. Download a file\n3. Download all files\n4. Quit\n");
+        printf("Enter your choice: ");
+
+        int menu_choice;
+        scanf("%d", &menu_choice);
+    
+        switch (menu_choice) {
+            case 1:
+                optO(sockfd);
+                break;
+            case 2:
+                optT(sockfd);
+                break;
+            case 3:
+                downloadAllFiles(sockfd); // New function call
+                break;
+            case 4:
+                printf("Quitting program. Goodbye!\n");
+                write(sockfd, "QUIT\n", strlen("QUIT\n"));
+                close(sockfd);
+                return 0;
+            default:
+                printf("Invalid choice. Try again.\n");
+        }
+    }
+}
+
+void optO(int sockfd) {
+    char buffer[BUFFER_SIZE];
+
+    // Send LIST command
+    write(sockfd, "LIST\n", strlen("LIST\n"));
+
+    // Receive and display the list
+    printf("Available files:\n");
+    while (true) {
+        memset(buffer, 0, sizeof(buffer));
+        int bytes_read = read(sockfd, buffer, sizeof(buffer) - 1);
+        if (bytes_read <= 0) {
+            fprintf(stderr, "Connection lost while listing files\n");
+            return;
+        }
+
+        printf("%s", buffer);
+
+        // Check for end of list (single dot on a line)
+        if (strstr(buffer, "\n.") != NULL) {
+            break;
+        }
+    }
+}
+
+void optT(int sockfd) {
+    char filename[BUFFER_SIZE];
+    char buffer[BUFFER_SIZE];
+
+    printf("Enter the filename to download: ");
+    scanf("%s", filename);
+
+    // Construct GET command
+    snprintf(buffer, sizeof(buffer), "GET %s\n", filename);
+    write(sockfd, buffer, strlen(buffer));
+
+    // Read server response
+    memset(buffer, 0, sizeof(buffer));
+    if (read(sockfd, buffer, sizeof(buffer) - 1) > 0) {
+        if (strncmp(buffer, "+OK", 3) != 0) {
+            printf("Server error: %s\n", buffer);
+            return;
+        }
+    }
+
+    // Ask the user if they want to display or save the file
+    printf("Do you want to display the file content on the screen (y/n)? ");
+    char choice;
+    scanf(" %c", &choice);
+
+    if (choice == 'y' || choice == 'Y') {
+        printf("Displaying file content:\n\n");
+        while (true) {
+            memset(buffer, 0, sizeof(buffer));
+            int bytes_read = read(sockfd, buffer, sizeof(buffer) - 1);
+            if (bytes_read <= 0) {
+                break;
+            }
+
+            buffer[bytes_read] = '\0'; // Null-terminate the buffer for safe printing
+            printf("%s", buffer);
+        }
+        printf("\nEnd of file content.\n");
+    } else {
+        // Open file for writing
+        FILE *file = fopen(filename, "wb");
+        if (file == NULL) {
+            perror("File creation failed");
+            return;
+        }
+
+        printf("Downloading file: %s\n", filename);
+        while (true) {
+            memset(buffer, 0, sizeof(buffer));
+            int bytes_read = read(sockfd, buffer, sizeof(buffer) - 1);
+            if (bytes_read <= 0) {
+                break;
+            }
+
+            // Write the buffer content to the file
+            fwrite(buffer, 1, bytes_read, file);
+        }
+
+        fclose(file);
+        printf("File downloaded successfully!\n");
+    }
+}
+
+
+
+
+void downloadAllFiles(int sockfd) {
+    char buffer[BUFFER_SIZE];
+
+    // Request the list of files
+    write(sockfd, "LIST\n", strlen("LIST\n"));
+
+    printf("Fetching list of files...\n");
+
+    // Store the filenames
+    char filenames[100][BUFFER_SIZE];
+    int file_count = 0;
+
+    // Receive the file list
+    while (true) {
+        memset(buffer, 0, sizeof(buffer));
+        int bytes_read = read(sockfd, buffer, sizeof(buffer) - 1);
+        if (bytes_read <= 0) {
+            fprintf(stderr, "Connection lost while listing files\n");
+            return;
+        }
+
+        buffer[bytes_read] = '\0'; // Null-terminate the buffer
+        printf("%s", buffer); // Show the file list to the user
+
+        // Process filenames and store them
+        char *line = strtok(buffer, "\n");
+        while (line != NULL) {
+            if (strcmp(line, ".") == 0) { // End of list
+                break;
+            }
+            strncpy(filenames[file_count], line, BUFFER_SIZE - 1);
+            file_count++;
+            line = strtok(NULL, "\n");
+        }
+
+        if (strstr(buffer, "\n.") != NULL) {
+            break; // End of list reached
+        }
+    }
+
+    // Download each file
+    for (int i = 0; i < file_count; i++) {
+        printf("\nDownloading file: %s\n", filenames[i]);
+
+        char get_command[BUFFER_SIZE];
+        snprintf(get_command, sizeof(get_command), "GET %s\n", filenames[i]);
+        write(sockfd, get_command, strlen(get_command));
+
+        // Read server response
+        memset(buffer, 0, sizeof(buffer));
+        if (read(sockfd, buffer, sizeof(buffer) - 1) > 0) {
+            if (strncmp(buffer, "+OK", 3) != 0) {
+                printf("Server error for file '%s': %s\n", filenames[i], buffer);
+                continue;
+            }
+        }
+
+        // Save the file
+        FILE *file = fopen(filenames[i], "wb");
+        if (file == NULL) {
+            perror("File creation failed");
+            continue;
+        }
+
+        while (true) {
+            memset(buffer, 0, sizeof(buffer));
+            int bytes_read = read(sockfd, buffer, sizeof(buffer) - 1);
+            if (bytes_read <= 0) {
+                break;
+            }
+
+            fwrite(buffer, 1, bytes_read, file);
+        }
+
+        fclose(file);
+        printf("File '%s' downloaded successfully!\n", filenames[i]);
+    }
 }
