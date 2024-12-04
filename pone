@@ -37,3 +37,65 @@ int connect_to_server(const char *given){
 }
 
 
+void send_command(int a, const char *command, char *response){
+  char buffer[BUFFER_SIZE];
+  memset(buffer, 0, BUFFER_SIZE);
+
+  if (write(a, command, strlen(command)) < 0){
+    handle_error("ERROR");
+  }
+  if (read(a, buffer, BUFFER_SIZE - 1) < 0){
+    handle_error("ERROR");
+  }
+
+  strcpy(reponse, buffer);
+}
+
+void list_files(int a){
+  char response[BUFFER_SIZE];
+  send_command(a, "LIST", response);
+
+  printf("AVAILABLE");
+  char *line = strtok(response, "\n");
+  while (line != NULL){
+    printf("%s\n", line);
+    line = strtok(NULL "\n");
+    }
+}
+
+void download_file(int a){
+  char filename[256];
+  char response[BUFFER_SIZE];
+  printf("Enter file name:");
+  scanf("%s", filename);
+  char size_cmd[512];
+  snpritf (size_cmd, sizeof(size_cmd), "SIZE %s\n", filename);
+  send_command(a, size_cmd, response);
+  if (strncmp(response, "+OK", 3) != 0){
+    printf("ERROR", response + 5);
+    return;
+  }
+  int file_size = atoi(response + 4);
+  printf("File size: %d bytes\n", file_size);
+  char get_cmd[512];
+  snprintf(get_cmd, sizeof(get_cmd), "GET %s\n", filename);
+  send_command(a, get_cmd, response);
+  FILE *file = fopen(filename, "wb");
+  if (!file){
+    perror("Error");
+    return;
+  }
+  int b = 0;
+  while (b < file_size){
+    int n = read(a, response, BUFFER_SIZE);
+    if (n <= 0) break;
+    fwrite(response, 1, n, file);
+    b += n;
+    printf("\rDownloading... "%d\%d bytes", b, file_size);
+    fflush(stdout);
+  }
+  printf("\nDownload completed: %s\n", filename);
+
+  fclose(file);
+}
+
