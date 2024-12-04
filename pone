@@ -8,6 +8,11 @@
 #define PORT 3456
 #define BUFFER_Size 4096
 
+void handle_error(const char *message){
+  perror(message);
+  exit(EXIT_FAILURE);
+}
+
 int connect_to_server(const char *given){
   int a;
   struct sockaddr_in server_addr;
@@ -99,3 +104,43 @@ void download_file(int a){
   fclose(file);
 }
 
+void quit_server(int a){
+  char response[BUFFER_SIZE];
+  send_command(a, "QUIT", response);
+  printf("%s\n", response);
+  close(a);
+}
+
+void menu(int a){
+  while (1){
+    printf("\nMenu: \n1. List available files\n2. Download\n3. Quit\nEnter a choice: ");
+    int m;
+    scanf("%d", &m);
+    switch(m){
+      case 1:
+        list_files(a);
+        break;
+      case 2:
+        download_file(a);
+        break;
+      case 3:
+        quit_server(a);
+        return;
+      default:
+        printf("invalid select");
+    }
+  }
+}
+
+int main() {
+  char hostname[256];
+  printf("Enter server hostname (newark.cs.sierracollege.edu or london.cs.sierracollege.edu): ");
+  scanf("%s", hostname);
+
+  int a = connect_to_server(hostname);
+  char response[BUFFER_SIZE];
+  read(a, response, BUFFER_SIZE - 1);
+  printf("%s\n", response);
+  menu(a);
+  return 0;
+}
