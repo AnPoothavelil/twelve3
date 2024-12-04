@@ -96,7 +96,7 @@ void download_file(int a){
     if (n <= 0) break;
     fwrite(response, 1, n, file);
     b += n;
-    printf("\rDownloading... "%d\%d bytes", b, file_size);
+    printf("\rDownloading... %d\%d bytes", b, file_size);
     fflush(stdout);
   }
   printf("\nDownload completed: %s\n", filename);
