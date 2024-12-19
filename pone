@@ -3,14 +3,11 @@
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
-#include <stdbool.h>
-#include <netdb.h>  // For getaddrinfo i googled help
+#include <netdb.h>
 
-//given numbers
 #define BUFFER_SIZE 1024
 #define SERVER_PORT 3456
 
-//req functions + new
 void optO(int a);
 void optT(int a);
 void optN(int a);
@@ -20,51 +17,45 @@ int main() {
     int a;
     struct sockaddr_in server_addr;
 
-    // question1
     printf("Select server to connect to:\n1. newark.cs.sierracollege.edu\n2. london.cs.sierracollege.edu\nEnter pick (1 or 2): ");
     int pick;
     scanf("%d", &pick);
-        //if then (like swca)
+
     if (pick == 1) {
         strcpy(sAdd, "newark.cs.sierracollege.edu");
     } else if (pick == 2) {
         strcpy(sAdd, "london.cs.sierracollege.edu");
     } else {
-        fprintf(stderr, "error. Exiting.\n");
+        fprintf(stderr, "Invalid choice. Exiting.\n");
         exit(EXIT_FAILURE);
     }
 
-    // socket
     a = socket(AF_INET, SOCK_STREAM, 0);
     if (a < 0) {
-        perror("error");
+        perror("Socket creation failed");
         exit(EXIT_FAILURE);
     }
 
-    // server address
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(SERVER_PORT);
 
     struct addrinfo hints, *res;
     memset(&hints, 0, sizeof(hints));
-    //this is where I really googled these two lines
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
 
-    int status = getaddrinfo(sAdd, NULL, &hints, &res);
-    if (status != 0) {
-        fprintf(stderr, "Failed to resolve hostname: %s\n", gai_strerror(status));
+    if (getaddrinfo(sAdd, NULL, &hints, &res) != 0) {
+        perror("Failed to resolve hostname");
         close(a);
         exit(EXIT_FAILURE);
     }
 
     memcpy(&server_addr.sin_addr, &((struct sockaddr_in *)res->ai_addr)->sin_addr, sizeof(server_addr.sin_addr));
-    freeaddrinfo(res); // Free the linked list
+    freeaddrinfo(res);
 
-    // Connect to the server
     if (connect(a, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-        perror("Connection to server failed");
+        perror("Connection failed");
         close(a);
         exit(EXIT_FAILURE);
     }
@@ -72,23 +63,20 @@ int main() {
     printf("Connected to server: %s\n", sAdd);
 
     char buffer[BUFFER_SIZE];
-    // Receive initial greeting from server
     if (read(a, buffer, sizeof(buffer) - 1) > 0) {
-        printf("Server: %s", buffer);
+        buffer[strcspn(buffer, "\n")] = 0;
+        printf("Server: %s\n", buffer);
     } else {
-        fprintf(stderr, "Failed to receive greeting from server\n");
+        fprintf(stderr, "Failed to receive greeting\n");
         close(a);
         exit(EXIT_FAILURE);
     }
 
-    while (true) {
-    // Present menu options
-        printf("\nMenu:\n1. List available files\n2. Download a file\n3. Download all files\n4. Quit\n");
-        printf("Enter your pick: ");
-
+    while (1) {
+        printf("\nMenu:\n1. List files\n2. Download a file\n3. Download all files\n4. Quit\nEnter your pick: ");
         int menu_choice;
         scanf("%d", &menu_choice);
-    
+
         switch (menu_choice) {
             case 1:
                 optO(a);
@@ -97,185 +85,25 @@ int main() {
                 optT(a);
                 break;
             case 3:
-                optN(a); // New function call
+                optN(a);
                 break;
             case 4:
-                printf("Quitting program. Goodbye!\n");
+                printf("Goodbye!\n");
                 write(a, "QUIT\n", strlen("QUIT\n"));
                 close(a);
                 return 0;
             default:
-                printf("Invalid pick. Try again.\n");
+                printf("Invalid choice. Try again.\n");
         }
     }
 }
 
 void optO(int a) {
     char buffer[BUFFER_SIZE];
-
-    // Send LIST command
     write(a, "LIST\n", strlen("LIST\n"));
-
-    // Receive and display the list
     printf("Available files:\n");
-    while (true) {
+
+    while (1) {
         memset(buffer, 0, sizeof(buffer));
         int bytes_read = read(a, buffer, sizeof(buffer) - 1);
-        if (bytes_read <= 0) {
-            fprintf(stderr, "Connection lost while listing files\n");
-            return;
-        }
-
-        printf("%s", buffer);
-
-        // Check for end of list (single dot on a line)
-        if (strstr(buffer, "\n.") != NULL) {
-            break;
-        }
-    }
-}
-
-void optT(int a) {
-    char filename[BUFFER_SIZE];
-    char buffer[BUFFER_SIZE];
-
-    printf("Enter the filename to download: ");
-    scanf("%s", filename);
-
-    // Construct GET command
-    snprintf(buffer, sizeof(buffer), "GET %s\n", filename);
-    write(a, buffer, strlen(buffer));
-
-    // Read server response
-    memset(buffer, 0, sizeof(buffer));
-    if (read(a, buffer, sizeof(buffer) - 1) > 0) {
-        if (strncmp(buffer, "+OK", 3) != 0) {
-            printf("Server error: %s\n", buffer);
-            return;
-        }
-    }
-
-    // Ask the user if they want to display or save the file
-    printf("Do you want to display the file content on the screen (y/n)? ");
-    char pick;
-    scanf(" %c", &pick);
-
-    if (pick == 'y' || pick == 'Y') {
-        printf("Displaying file content:\n\n");
-        while (true) {
-            memset(buffer, 0, sizeof(buffer));
-            int bytes_read = read(a, buffer, sizeof(buffer) - 1);
-            if (bytes_read <= 0) {
-                break;
-            }
-
-            buffer[bytes_read] = '\0'; // Null-terminate the buffer for safe printing
-            printf("%s", buffer);
-        }
-        printf("\nEnd of file content.\n");
-    } else {
-        // Open file for writing
-        FILE *file = fopen(filename, "wb");
-        if (file == NULL) {
-            perror("File creation failed");
-            return;
-        }
-
-        printf("Downloading file: %s\n", filename);
-        while (true) {
-            memset(buffer, 0, sizeof(buffer));
-            int bytes_read = read(a, buffer, sizeof(buffer) - 1);
-            if (bytes_read <= 0) {
-                break;
-            }
-
-            // Write the buffer content to the file
-            fwrite(buffer, 1, bytes_read, file);
-        }
-
-        fclose(file);
-        printf("File downloaded successfully!\n");
-    }
-}
-
-
-
-
-void optN(int a) {
-    char buffer[BUFFER_SIZE];
-
-    // Request the list of files
-    write(a, "LIST\n", strlen("LIST\n"));
-
-    printf("Fetching list of files...\n");
-
-    // Store the filenames
-    char filenames[100][BUFFER_SIZE];
-    int file_count = 0;
-
-    // Receive the file list
-    while (true) {
-        memset(buffer, 0, sizeof(buffer));
-        int bytes_read = read(a, buffer, sizeof(buffer) - 1);
-        if (bytes_read <= 0) {
-            fprintf(stderr, "Connection lost while listing files\n");
-            return;
-        }
-
-        buffer[bytes_read] = '\0'; // Null-terminate the buffer
-        printf("%s", buffer); // Show the file list to the user
-
-        // Process filenames and store them
-        char *line = strtok(buffer, "\n");
-        while (line != NULL) {
-            if (strcmp(line, ".") == 0) { // End of list
-                break;
-            }
-            strncpy(filenames[file_count], line, BUFFER_SIZE - 1);
-            file_count++;
-            line = strtok(NULL, "\n");
-        }
-
-        if (strstr(buffer, "\n.") != NULL) {
-            break; // End of list reached
-        }
-    }
-
-    // Download each file
-    for (int i = 0; i < file_count; i++) {
-        printf("\nDownloading file: %s\n", filenames[i]);
-
-        char get_command[BUFFER_SIZE];
-        snprintf(get_command, sizeof(get_command), "GET %s\n", filenames[i]);
-        write(a, get_command, strlen(get_command));
-
-        // Read server response
-        memset(buffer, 0, sizeof(buffer));
-        if (read(a, buffer, sizeof(buffer) - 1) > 0) {
-            if (strncmp(buffer, "+OK", 3) != 0) {
-                printf("Server error for file '%s': %s\n", filenames[i], buffer);
-                continue;
-            }
-        }
-
-        // Save the file
-        FILE *file = fopen(filenames[i], "wb");
-        if (file == NULL) {
-            perror("File creation failed");
-            continue;
-        }
-
-        while (true) {
-            memset(buffer, 0, sizeof(buffer));
-            int bytes_read = read(a, buffer, sizeof(buffer) - 1);
-            if (bytes_read <= 0) {
-                break;
-            }
-
-            fwrite(buffer, 1, bytes_read, file);
-        }
-
-        fclose(file);
-        printf("File '%s' downloaded successfully!\n", filenames[i]);
-    }
-}
+        if (by
